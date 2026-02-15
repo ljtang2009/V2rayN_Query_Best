@@ -50,7 +50,7 @@ python export_nodes.py <数据库路径> [输出文件]
 示例：
 ```bash
 # Windows
-python export_nodes.py "v2rayN\v2rayN\bin\Debug\net8.0-windows10.0.17763\guiConfigs\guiNDB.db" nodes.txt
+python export_nodes.py "D:\APP\v2rayN-windows-64-SelfContained\guiConfigs\guiNDB.db" nodes.txt
 
 # macOS
 python3 export_nodes.py ~/Library/Application\ Support/v2rayN/guiNDB.db nodes.txt
