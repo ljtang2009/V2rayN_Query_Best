@@ -37,7 +37,45 @@ v2rayN\v2rayN\bin\Debug\net8.0-windows10.0.17763\guiConfigs\guiNDB.db
 ~/Library/Application Support/v2rayN/guiNDB.db
 ```
 
-### 3. 运行导出脚本
+### 3. 启动数据库客户端
+
+下列以DBeaver为例，其他数据库客户端也类似。
+
+#### 下载SQLite驱动
+
+下载地址（选一个即可）：
+
+直接下载链接（示例：3.51.2.0）：
+https://repo1.maven.org/maven2/org/xerial/sqlite-jdbc/3.51.2.0/sqlite-jdbc-3.51.2.0.jar
+或者打开目录自己选版本：
+https://repo1.maven.org/maven2/org/xerial/sqlite-jdbc/
+
+#### 运行DBeaver
+
+1. 打开DBeaver
+2. 点击"数据库" → "新建数据库连接"
+3. 选择"SQLite"
+4. 点击"下一步"
+
+#### 在 DBeaver 里手动指定驱动
+
+按下面步骤操作：
+
+1. 在 DBeaver 中，右键你的 SQLite 连接 → “编辑连接(Edit Connection)”。
+1. 在弹出窗口左侧选中 “驱动设置(Driver settings)” 或 “编辑驱动设置(Edit driver settings)”。
+1. 切到 “库(Libraries)” 标签页。
+1. 你会看到类似 org.xerial:sqlite-jdbc:RELEASE 这样的条目，选中它，点击“删除(Remove)”，把原来的自动下载条目删掉。
+1. 点击 “添加文件(Add File)”，选中你刚才下载的 sqlite-jdbc-3.51.2.0.jar。
+1. 确保驱动信息大致是：
+   - 驱动名：`SQLite`
+   - 类名：org.sqlite.JDBC（一般会自动带出来，如果没有就手动填）
+1. 点 “确定” 保存驱动设置。
+1. 回到连接设置，填好:
+JDBC URL：jdbc:sqlite:/路径/到/你的数据库文件.db
+用户名/密码一般可以留空（SQLite 默认没有账号）。
+1. 点击 “测试连接(Test Connection)”，应该就能连上了。
+
+### 4. 运行导出脚本
 
 #### 导出优秀节点（默认）
 
