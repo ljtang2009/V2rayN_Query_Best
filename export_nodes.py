@@ -247,6 +247,93 @@ class V2rayNodeExporter:
         cursor.execute(query)
         return [dict(row) for row in cursor.fetchall()]
 
+    def _add_network_params(self, params: Dict[str, str], node: Dict[str, Any], is_vmess: bool = False) -> None:
+        stream_security = node.get("StreamSecurity", "")
+        
+        if node.get("Flow"):
+            params["flow"] = node.get("Flow", "")
+        
+        if stream_security:
+            params["security"] = stream_security
+        
+        if node.get("Sni"):
+            params["sni"] = urllib.parse.quote(node.get("Sni", ""), safe='')
+        if node.get("Fingerprint"):
+            params["fp"] = urllib.parse.quote(node.get("Fingerprint", ""), safe='')
+        if node.get("PublicKey"):
+            params["pbk"] = urllib.parse.quote(node.get("PublicKey", ""), safe='')
+        if node.get("ShortId"):
+            params["sid"] = urllib.parse.quote(node.get("ShortId", ""), safe='')
+        if node.get("SpiderX"):
+            params["spx"] = urllib.parse.quote(node.get("SpiderX", ""), safe='')
+        if node.get("Mldsa65Verify"):
+            params["pqv"] = urllib.parse.quote(node.get("Mldsa65Verify", ""), safe='')
+        
+        if stream_security == "tls":
+            if node.get("Alpn"):
+                params["alpn"] = urllib.parse.quote(node.get("Alpn", ""), safe='')
+            allow_insecure = node.get("AllowInsecure", "")
+            if allow_insecure and allow_insecure != "0":
+                params["insecure"] = "1"
+                params["allowInsecure"] = "1"
+            else:
+                params["insecure"] = "0"
+                params["allowInsecure"] = "0"
+        
+        if node.get("EchConfigList"):
+            params["ech"] = urllib.parse.quote(node.get("EchConfigList", ""), safe='')
+        if node.get("CertSha"):
+            params["pcs"] = urllib.parse.quote(node.get("CertSha", ""), safe='')
+        
+        network = node.get("Network", "tcp")
+        if not network:
+            network = "tcp"
+        params["type"] = network
+        
+        header_type = node.get("HeaderType", "")
+        request_host = node.get("RequestHost", "")
+        path = node.get("Path", "")
+        
+        if network == "tcp":
+            params["headerType"] = header_type if header_type else "none"
+            if request_host:
+                params["host"] = urllib.parse.quote(request_host, safe='')
+        elif network == "kcp":
+            params["headerType"] = header_type if header_type else "none"
+            if path:
+                params["seed"] = urllib.parse.quote(path, safe='')
+        elif network in ("ws", "httpupgrade"):
+            if request_host:
+                params["host"] = urllib.parse.quote(request_host, safe='')
+            if path:
+                params["path"] = urllib.parse.quote(path, safe='')
+        elif network == "xhttp":
+            if request_host:
+                params["host"] = urllib.parse.quote(request_host, safe='')
+            if path:
+                params["path"] = urllib.parse.quote(path, safe='')
+            if header_type:
+                params["mode"] = urllib.parse.quote(header_type, safe='')
+            if node.get("Extra"):
+                params["extra"] = urllib.parse.quote(node.get("Extra", ""), safe='')
+        elif network in ("http", "h2"):
+            params["type"] = "http"
+            if request_host:
+                params["host"] = urllib.parse.quote(request_host, safe='')
+            if path:
+                params["path"] = urllib.parse.quote(path, safe='')
+        elif network == "quic":
+            params["headerType"] = header_type if header_type else "none"
+            params["quicSecurity"] = urllib.parse.quote(request_host, safe='') if request_host else "none"
+            params["key"] = urllib.parse.quote(path, safe='') if path else ""
+        elif network == "grpc":
+            if request_host:
+                params["authority"] = urllib.parse.quote(request_host, safe='')
+            if path:
+                params["serviceName"] = urllib.parse.quote(path, safe='')
+            if header_type in ("gun", "multi"):
+                params["mode"] = urllib.parse.quote(header_type, safe='')
+
     def to_vmess_uri(self, node: Dict[str, Any]) -> str:
         vmess_qr = {
             "v": node.get("ConfigVersion", 2),
@@ -256,7 +343,7 @@ class V2rayNodeExporter:
             "id": node.get("Id", ""),
             "aid": node.get("AlterId", 0),
             "scy": node.get("Security", "auto"),
-            "net": node.get("Network", "tcp"),
+            "net": node.get("Network", "tcp") or "tcp",
             "type": node.get("HeaderType", ""),
             "host": node.get("RequestHost", ""),
             "path": node.get("Path", ""),
@@ -264,7 +351,9 @@ class V2rayNodeExporter:
             "sni": node.get("Sni", ""),
             "alpn": node.get("Alpn", ""),
             "fp": node.get("Fingerprint", ""),
-            "insecure": "1" if node.get("AllowInsecure") == "1" else "0"
+            "insecure": "1" if node.get("AllowInsecure") and node.get("AllowInsecure") != "0" else "0",
+            "pbk": node.get("PublicKey", ""),
+            "sid": node.get("ShortId", "")
         }
         json_str = json.dumps(vmess_qr, separators=(',', ':'))
         b64_str = base64.b64encode(json_str.encode('utf-8')).decode('utf-8')
@@ -276,22 +365,18 @@ class V2rayNodeExporter:
         uuid = node.get("Id", "")
         remarks = node.get("Remarks", "")
 
-        params = {
-            "encryption": node.get("Security", "none"),
-            "type": node.get("Network", "tcp"),
-            "security": node.get("StreamSecurity", ""),
-            "sni": node.get("Sni", ""),
-            "fp": node.get("Fingerprint", ""),
-            "alpn": node.get("Alpn", ""),
-            "flow": node.get("Flow", ""),
-            "headerType": node.get("HeaderType", ""),
-            "host": node.get("RequestHost", ""),
-            "path": node.get("Path", ""),
-            "allowInsecure": "1" if node.get("AllowInsecure") == "1" else "0"
-        }
+        params = {}
+        security = node.get("Security", "")
+        params["encryption"] = security if security else "none"
+        
+        self._add_network_params(params, node)
 
-        query = "&".join([f"{k}={urllib.parse.quote(str(v))}" for k, v in params.items() if v])
-        remark = f"#{urllib.parse.quote(remarks)}" if remarks else ""
+        query = "&".join([f"{k}={v}" for k, v in params.items() if v])
+        remark = f"#{urllib.parse.quote(remarks, safe='')}" if remarks else ""
+        
+        if ':' in address:
+            address = f"[{address}]"
+        
         return f"vless://{uuid}@{address}:{port}?{query}{remark}"
 
     def to_shadowsocks_uri(self, node: Dict[str, Any]) -> str:
@@ -302,7 +387,12 @@ class V2rayNodeExporter:
         remarks = node.get("Remarks", "")
 
         user_info = base64.b64encode(f"{method}:{password}".encode('utf-8')).decode('utf-8')
-        remark = f"#{urllib.parse.quote(remarks)}" if remarks else ""
+        user_info = user_info.rstrip('=')
+        remark = f"#{urllib.parse.quote(remarks, safe='')}" if remarks else ""
+        
+        if ':' in address:
+            address = f"[{address}]"
+        
         return f"ss://{user_info}@{address}:{port}{remark}"
 
     def to_trojan_uri(self, node: Dict[str, Any]) -> str:
@@ -311,19 +401,15 @@ class V2rayNodeExporter:
         password = node.get("Id", "")
         remarks = node.get("Remarks", "")
 
-        params = {
-            "security": node.get("StreamSecurity", ""),
-            "sni": node.get("Sni", ""),
-            "fp": node.get("Fingerprint", ""),
-            "alpn": node.get("Alpn", ""),
-            "type": node.get("Network", "tcp"),
-            "host": node.get("RequestHost", ""),
-            "path": node.get("Path", ""),
-            "allowInsecure": "1" if node.get("AllowInsecure") == "1" else "0"
-        }
+        params = {}
+        self._add_network_params(params, node)
 
-        query = "&".join([f"{k}={urllib.parse.quote(str(v))}" for k, v in params.items() if v])
-        remark = f"#{urllib.parse.quote(remarks)}" if remarks else ""
+        query = "&".join([f"{k}={v}" for k, v in params.items() if v])
+        remark = f"#{urllib.parse.quote(remarks, safe='')}" if remarks else ""
+        
+        if ':' in address:
+            address = f"[{address}]"
+        
         return f"trojan://{password}@{address}:{port}?{query}{remark}"
 
     def to_hysteria2_uri(self, node: Dict[str, Any]) -> str:
@@ -332,15 +418,43 @@ class V2rayNodeExporter:
         password = node.get("Id", "")
         remarks = node.get("Remarks", "")
 
-        params = {
-            "sni": node.get("Sni", ""),
-            "obfs": "salamander" if node.get("Path") else "",
-            "obfs-password": node.get("Path", ""),
-            "pinSHA256": node.get("CertSha", "")
-        }
+        params = {}
+        
+        if node.get("Sni"):
+            params["sni"] = urllib.parse.quote(node.get("Sni", ""), safe='')
+        if node.get("Alpn"):
+            params["alpn"] = urllib.parse.quote(node.get("Alpn", ""), safe='')
+        
+        allow_insecure = node.get("AllowInsecure", "")
+        if allow_insecure and allow_insecure != "0":
+            params["insecure"] = "1"
+            params["allowInsecure"] = "1"
+        else:
+            params["insecure"] = "0"
+            params["allowInsecure"] = "0"
+        
+        path = node.get("Path", "")
+        if path:
+            params["obfs"] = "salamander"
+            params["obfs-password"] = urllib.parse.quote(path, safe='')
+        
+        ports = node.get("Ports", "")
+        if ports:
+            params["mport"] = urllib.parse.quote(ports.replace(':', '-'), safe='')
+        
+        cert_sha = node.get("CertSha", "")
+        if cert_sha:
+            idx = cert_sha.index('~') if '~' in cert_sha else -1
+            if idx > 0:
+                cert_sha = cert_sha[:idx]
+            params["pinSHA256"] = urllib.parse.quote(cert_sha, safe='')
 
-        query = "&".join([f"{k}={urllib.parse.quote(str(v))}" for k, v in params.items() if v])
-        remark = f"#{urllib.parse.quote(remarks)}" if remarks else ""
+        query = "&".join([f"{k}={v}" for k, v in params.items() if v])
+        remark = f"#{urllib.parse.quote(remarks, safe='')}" if remarks else ""
+        
+        if ':' in address:
+            address = f"[{address}]"
+        
         return f"hy2://{password}@{address}:{port}?{query}{remark}"
 
     def to_tuic_uri(self, node: Dict[str, Any]) -> str:
@@ -350,16 +464,33 @@ class V2rayNodeExporter:
         key = node.get("Security", "")
         remarks = node.get("Remarks", "")
 
-        params = {
-            "sni": node.get("Sni", ""),
-            "congestion_control": node.get("HeaderType", ""),
-            "alpn": node.get("Alpn", ""),
-            "allowInsecure": "1" if node.get("AllowInsecure") == "1" else "0"
-        }
+        params = {}
+        
+        if node.get("Sni"):
+            params["sni"] = urllib.parse.quote(node.get("Sni", ""), safe='')
+        if node.get("Alpn"):
+            params["alpn"] = urllib.parse.quote(node.get("Alpn", ""), safe='')
+        
+        allow_insecure = node.get("AllowInsecure", "")
+        if allow_insecure and allow_insecure != "0":
+            params["insecure"] = "1"
+            params["allowInsecure"] = "1"
+        else:
+            params["insecure"] = "0"
+            params["allowInsecure"] = "0"
+        
+        congestion_control = node.get("HeaderType", "")
+        if congestion_control:
+            params["congestion_control"] = congestion_control
 
-        query = "&".join([f"{k}={urllib.parse.quote(str(v))}" for k, v in params.items() if v])
-        remark = f"#{urllib.parse.quote(remarks)}" if remarks else ""
-        return f"tuic://{uuid}:{key}@{address}:{port}?{query}{remark}"
+        query = "&".join([f"{k}={v}" for k, v in params.items() if v])
+        remark = f"#{urllib.parse.quote(remarks, safe='')}" if remarks else ""
+        
+        if ':' in address:
+            address = f"[{address}]"
+        
+        user_info = f"{uuid}:{key}"
+        return f"tuic://{user_info}@{address}:{port}?{query}{remark}"
 
     def to_wireguard_uri(self, node: Dict[str, Any]) -> str:
         address = node.get("Address", "")
@@ -367,15 +498,23 @@ class V2rayNodeExporter:
         private_key = node.get("Id", "")
         remarks = node.get("Remarks", "")
 
-        params = {
-            "publickey": node.get("PublicKey", ""),
-            "reserved": node.get("Path", ""),
-            "address": node.get("RequestHost", ""),
-            "mtu": node.get("ShortId", "")
-        }
+        params = {}
+        
+        if node.get("PublicKey"):
+            params["publickey"] = urllib.parse.quote(node.get("PublicKey", ""), safe='')
+        if node.get("Path"):
+            params["reserved"] = urllib.parse.quote(node.get("Path", ""), safe='')
+        if node.get("RequestHost"):
+            params["address"] = urllib.parse.quote(node.get("RequestHost", ""), safe='')
+        if node.get("ShortId"):
+            params["mtu"] = urllib.parse.quote(node.get("ShortId", ""), safe='')
 
-        query = "&".join([f"{k}={urllib.parse.quote(str(v))}" for k, v in params.items() if v])
-        remark = f"#{urllib.parse.quote(remarks)}" if remarks else ""
+        query = "&".join([f"{k}={v}" for k, v in params.items() if v])
+        remark = f"#{urllib.parse.quote(remarks, safe='')}" if remarks else ""
+        
+        if ':' in address:
+            address = f"[{address}]"
+        
         return f"wireguard://{private_key}@{address}:{port}?{query}{remark}"
 
     def to_socks_uri(self, node: Dict[str, Any]) -> str:
@@ -386,7 +525,11 @@ class V2rayNodeExporter:
         remarks = node.get("Remarks", "")
 
         pw = base64.b64encode(f"{password}:{user}".encode('utf-8')).decode('utf-8')
-        remark = f"#{urllib.parse.quote(remarks)}" if remarks else ""
+        remark = f"#{urllib.parse.quote(remarks, safe='')}" if remarks else ""
+        
+        if ':' in address:
+            address = f"[{address}]"
+        
         return f"socks://{pw}@{address}:{port}{remark}"
 
     def to_http_uri(self, node: Dict[str, Any]) -> str:
@@ -397,7 +540,11 @@ class V2rayNodeExporter:
         remarks = node.get("Remarks", "")
 
         user_info = f"{user}:{password}" if user else ""
-        remark = f"#{urllib.parse.quote(remarks)}" if remarks else ""
+        remark = f"#{urllib.parse.quote(remarks, safe='')}" if remarks else ""
+        
+        if ':' in address:
+            address = f"[{address}]"
+        
         return f"http://{user_info}@{address}:{port}{remark}"
 
     def node_to_uri(self, node: Dict[str, Any]) -> Optional[str]:
@@ -408,15 +555,15 @@ class V2rayNodeExporter:
         try:
             if config_type == 1:
                 return self.to_vmess_uri(node)
-            elif config_type == 6:
+            elif config_type == 5:
                 uuid = node.get("Id", "")
                 if not self.is_valid_uuid(uuid):
                     print(f"Warning: Invalid UUID for node '{remarks}' (IndexId: {index_id}): {uuid}")
                     return None
                 return self.to_vless_uri(node)
-            elif config_type == 2:
+            elif config_type == 3:
                 return self.to_shadowsocks_uri(node)
-            elif config_type == 5:
+            elif config_type == 6:
                 return self.to_trojan_uri(node)
             elif config_type == 7:
                 return self.to_hysteria2_uri(node)
@@ -424,15 +571,21 @@ class V2rayNodeExporter:
                 return self.to_tuic_uri(node)
             elif config_type == 9:
                 return self.to_wireguard_uri(node)
-            elif config_type == 3:
+            elif config_type == 4:
                 user = node.get("Id", "")
                 password = node.get("Security", "")
                 if not user or not password:
                     print(f"Warning: Missing credentials for SOCKS node '{remarks}' (IndexId: {index_id})")
                     return None
                 return self.to_socks_uri(node)
-            elif config_type == 4:
+            elif config_type == 10:
                 return self.to_http_uri(node)
+            elif config_type == 2:
+                print(f"Info: Skipping Custom config type for node '{remarks}' (IndexId: {index_id})")
+                return None
+            elif config_type == 11:
+                print(f"Info: Skipping Anytls config type for node '{remarks}' (IndexId: {index_id})")
+                return None
             else:
                 print(f"Warning: Unknown config type {config_type} for node '{remarks}' (IndexId: {index_id})")
                 return None
